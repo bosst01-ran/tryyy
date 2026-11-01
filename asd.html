@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Number Grid Challenge</title>
+<style>
+:root{--bg:#0d1119;--panel:#171d29;--cell:#282f3c;--line:#3b4557;--gold:#ffb900;--text:#f5f7fb;--muted:#9aa5b7;--red:#ff5263;--green:#42d392}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 50% 20%,#1a2231 0%,#0d1119 60%);color:var(--text);font-family:Arial,Helvetica,sans-serif;display:flex;justify-content:center;align-items:center;padding:24px}
+.game{width:min(100%,570px);text-align:center}.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;color:#c5ccda;font-size:15px}.mistakes{display:flex;align-items:center;gap:8px}.dot{width:14px;height:14px;border-radius:50%;background:#343b48;border:1px solid #4b5361}.dot.used{background:var(--gold);border-color:var(--gold)}
+h1{font-size:clamp(22px,5vw,30px);margin:0 0 7px;letter-spacing:.4px}.sub{color:var(--muted);font-size:14px;margin-bottom:22px}
+.grid{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;width:min(100%,500px);margin:0 auto 28px}
+.cell{aspect-ratio:1;border:2px solid var(--line);border-radius:7px;background:linear-gradient(145deg,#303846,#252c38);color:white;font-size:clamp(23px,5vw,38px);font-weight:700;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:.12s;user-select:none}
+.cell.given{cursor:default;background:#252c38;color:#f4f6fa;border-color:#343d4e}
+.cell.selected{border-color:#fff;box-shadow:0 0 0 1px var(--gold);background:#493600}
+.cell.entered{color:var(--gold);border-color:#bd8200;background:#202331}
+.cell.conflict{border-color:var(--red);color:var(--red);animation:shake .2s}
+@keyframes shake{25%{transform:translateX(-3px)}75%{transform:translateX(3px)}}
+.numbers{display:flex;justify-content:center;gap:10px;margin-bottom:20px}.num{width:clamp(48px,12vw,70px);height:clamp(48px,12vw,70px);border:2px solid var(--line);border-radius:7px;background:#202633;color:white;font-size:25px;font-weight:bold;cursor:pointer}.num:hover,.num:focus{border-color:var(--gold);background:#34303a}.num:disabled{opacity:.3;cursor:not-allowed}
+.bottom{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:14px;margin:0 auto 12px;width:min(100%,500px)}.bar{height:8px;background:#343b47;border-radius:20px;overflow:hidden;width:min(100%,500px);margin:auto}.fill{height:100%;width:100%;background:var(--gold);transition:width .3s linear}
+.status{height:24px;margin-top:16px;color:var(--muted);font-size:15px}.status.bad{color:var(--red)}.status.good{color:var(--green)}
+.actions{display:flex;justify-content:center;gap:10px;margin-top:18px}.action{border:1px solid var(--line);border-radius:7px;background:#202633;color:#dce2ec;padding:10px 17px;cursor:pointer}.action:hover{border-color:var(--gold)}
+.overlay{position:fixed;inset:0;background:#070a10dd;display:none;align-items:center;justify-content:center;padding:20px}.modal{width:min(100%,360px);background:#1a2230;border:1px solid #3b4557;border-radius:14px;padding:28px;text-align:center;box-shadow:0 20px 80px #0008}.modal h2{margin:0 0 10px}.modal p{color:#b4bece;line-height:1.5}.modal button{margin-top:10px}
+@media(max-width:430px){body{padding:16px}.grid{gap:5px}.cell{border-radius:5px}.top{font-size:13px}}
+</style>
+</head>
+<body>
+<main class="game">
+  <div class="top"><span>Use each digit once per row and column</span><span class="mistakes">Mistakes <i class="dot" id="d1"></i><i class="dot" id="d2"></i><i class="dot" id="d3"></i></span></div>
+  <h1>NUMBER GRID</h1><div class="sub">Fill every empty square with 1–5</div>
+  <div class="grid" id="grid" aria-label="Number grid"></div>
+  <div class="numbers" id="numbers"></div>
+  <div class="bottom"><span id="message">Complete the grid before time runs out</span><span id="time">60.0s</span></div>
+  <div class="bar"><div class="fill" id="fill"></div></div>
+  <div class="status" id="status">Select an empty square, then choose a number.</div>
+  <div class="actions"><button class="action" id="erase">Erase</button><button class="action" id="restart">Restart</button></div>
+</main>
+<div class="overlay" id="overlay"><div class="modal"><h2 id="resultTitle">Time's up!</h2><p id="resultText">Try again and complete the number grid.</p><button class="action" id="again">Play again</button></div></div>
+<script>
+const solution=[
+ [5,4,2,3,1],
+ [1,5,4,2,3],
+ [3,1,5,4,2],
+ [4,2,3,1,5],
+ [2,3,1,5,4]
+];
+// Fixed clue positions. The remaining squares are filled by the player.
+const clues=[
+ [0,1,0,0,1],
+ [1,0,0,1,0],
+ [0,1,0,0,1],
+ [0,0,0,0,1],
+ [1,0,1,0,0]
+];
+let board, selected=null, mistakes=0, timeLeft=60, timer=null, finished=false;
+const grid=document.getElementById('grid'), numbers=document.getElementById('numbers');
+const statusEl=document.getElementById('status'), timeEl=document.getElementById('time'), fill=document.getElementById('fill');
+function start(){
+ clearInterval(timer);board=solution.map((row,r)=>row.map((v,c)=>clues[r][c]?v:0));
+ selected=null;mistakes=0;timeLeft=60;finished=false;
+ for(let i=1;i<=3;i++)document.getElementById('d'+i).classList.remove('used');
+ document.getElementById('overlay').style.display='none';
+ statusEl.textContent='Select an empty square, then choose a number.';statusEl.className='status';
+ render();updateClock();
+ timer=setInterval(()=>{if(finished)return;timeLeft=Math.max(0,timeLeft-.1);updateClock();if(timeLeft<=0)end(false);},100);
+}
+function render(){
+ grid.innerHTML='';
+ board.forEach((row,r)=>row.forEach((v,c)=>{
+  const el=document.createElement('button');el.className='cell'+(clues[r][c]?' given':'')+(v&&!clues[r][c]?' entered':'')+(selected&&selected[0]===r&&selected[1]===c?' selected':'');
+  el.textContent=v||'';el.setAttribute('aria-label',`Row ${r+1}, column ${c+1}${v?', number '+v:', empty'}`);
+  el.addEventListener('click',()=>{if(finished||clues[r][c])return;selected=[r,c];render();});grid.appendChild(el);
+ }));
+ numbers.innerHTML='';
+ for(let n=1;n<=5;n++){const b=document.createElement('button');b.className='num';b.textContent=n;b.addEventListener('click',()=>enter(n));numbers.appendChild(b);}
+}
+function enter(n){
+ if(finished)return;
+ if(!selected){statusEl.textContent='Choose an empty square first.';return;}
+ const [r,c]=selected;
+ if(clues[r][c])return;
+ // Reject a number already used in the same row or column.
+ const clash=board[r].some((v,i)=>i!==c&&v===n)||board.some((row,i)=>i!==r&&row[c]===n);
+ if(clash||solution[r][c]!==n){
+  mistakes++;document.getElementById('d'+mistakes).classList.add('used');
+  statusEl.textContent=clash?'That number is already used in this row or column.':'Not quite — try another number.';
+  statusEl.className='status bad';
+  const cell=grid.children[r*5+c];cell.classList.add('conflict');setTimeout(()=>cell.classList.remove('conflict'),250);
+  if(mistakes>=3)end(false,'Too many mistakes');return;
+ }
+ board[r][c]=n;selected=null;statusEl.textContent='Nice! Keep going.';statusEl.className='status good';render();
+ if(board.every(row=>row.every(v=>v!==0)))end(true);
+}
+function erase(){if(!selected||finished)return;const [r,c]=selected;if(!clues[r][c])board[r][c]=0;render();}
+function updateClock(){timeEl.textContent=timeLeft.toFixed(1)+'s';fill.style.width=(timeLeft/60*100)+'%';}
+function end(win,title){
+ finished=true;clearInterval(timer);
+ document.getElementById('resultTitle').textContent=title||(win?'You win!':'Time’s up!');
+ document.getElementById('resultText').textContent=win?'Perfect! You completed the number grid.':'Give it another try — each digit can appear only once in every row and column.';
+ document.getElementById('overlay').style.display='flex';
+}
+document.getElementById('erase').addEventListener('click',erase);
+document.getElementById('restart').addEventListener('click',start);
+document.getElementById('again').addEventListener('click',start);
+document.addEventListener('keydown',e=>{if(e.key>='1'&&e.key<='5')enter(Number(e.key));if(e.key==='Backspace'||e.key==='Delete')erase();});
+start();
+</script>
+</body>
+</html>
